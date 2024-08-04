@@ -1,5 +1,4 @@
 use rusqlite::{Connection, Result};
-use std::fs::File;
 use std::io;
 use std::path::Path;
 
@@ -19,17 +18,13 @@ fn prompt_user(prompt: &str) -> String {
     input.trim().to_string()
 }
 
-fn create_table(observation: Observation) {
-    let path = Path::new("../obervations/observations.db");
-    let display = path.display();
+fn create_table(observation: Observation) -> Result<()> {
+    println!("Setting up observation.");
 
-    match File::create(&path) {
-        Err(why) => println!(
-            "DB file {} already exists or couldn't be created: {}",
-            display, why
-        ),
-        Ok(_) => println!("DB file created!"),
-    };
+    let path = Path::new("./observations/observations.db");
+
+    let conn = Connection::open(&path);
+    Ok(())
 }
 
 fn new_observation() {
