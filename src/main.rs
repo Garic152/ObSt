@@ -1,8 +1,9 @@
+use chrono::prelude::*;
 use rusqlite::{Connection, Result};
 use std::io;
 use std::path::Path;
 
-static DATATYPES: [&str; 3] = ["INTEGER", "BOOLEAN", "float"];
+static DATATYPES: [&str; 2] = ["INTEGER", "FLOAT"];
 
 struct Observation {
     name: String,
@@ -18,13 +19,27 @@ fn prompt_user(prompt: &str) -> String {
     input.trim().to_string()
 }
 
-fn create_table(observation: Observation) -> Result<()> {
+fn create_table(observation: Observation) -> Result<Connection> {
     println!("Setting up observation.");
 
     let path = Path::new("./observations/observations.db");
+    let conn = Connection::open(&path)?;
 
-    let conn = Connection::open(&path);
-    Ok(())
+    let mut columns = String::new();
+    for param in &observation.parameters {
+        columns.push_str(&format!("{} {}, ", param[0], param[1]));
+    }
+    columns.pop();
+    columns.pop();
+
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} ({});",
+        observation.name, columns
+    );
+    println!("{}", sql);
+    conn.execute(&sql, [])?;
+
+    Ok(conn)
 }
 
 fn new_observation() {
@@ -32,6 +47,15 @@ fn new_observation() {
     if name.is_empty() {
         println!("Obersvation name cannot be empty. Exiting...");
         return;
+    }
+
+    let mut parameters: Vec<Vec<String>> = Vec::new();
+
+    if prompt_user("Want to add a date for each entry? [Y/n]") == "Y" {
+        parameters.push(vec![String::from("Date"), String::from("DATETIME")]);
+        println!("Added a date element to the table");
+    } else {
+        println!("Input not [Y]es, skipping date...");
     }
 
     let param_num =
@@ -48,23 +72,18 @@ fn new_observation() {
         }
     };
 
-    let mut parameters: Vec<Vec<String>> = Vec::new();
-
     for i in 0..param_num {
         let arg_name = prompt_user(&format!("Name of argument {}", i + 1));
 
-        let arg_type = prompt_user(&format!(
-            "Type of argument {}:\n[1] Integer\n[2] Bool\n[3] Float",
-            i
-        ));
+        let arg_type = prompt_user(&format!("Type of argument {}:\n[1] Integer\n[2] Float", i));
 
         match arg_type.trim().parse::<usize>() {
             Ok(number) => {
-                if number > DATATYPES.len() - 1 {
+                if number > DATATYPES.len() {
                     println!("Invalid data type, exiting...\n");
                     return;
                 }
-                parameters.push(vec![arg_name, String::from(DATATYPES[number])]);
+                parameters.push(vec![arg_name, String::from(DATATYPES[number - 1])]);
             }
             Err(_) => {
                 println!("Number not valid, exiting...\n");
@@ -74,12 +93,24 @@ fn new_observation() {
         println!("\n");
     }
     let observation = Observation { name, parameters };
-    create_table(observation);
+
+    let result = create_table(observation);
+    match result {
+        Ok(_) => {
+            println!("Successfully created observation, exiting...");
+            return;
+        }
+        Err(e) => {
+            println!("Failed to create observation: {}", e);
+            return;
+        }
+    }
 }
 
 fn main() {
     println!("Welcome to ObSt beta!\nSelect one of the following options by typing the corresponding number.");
-    println!("1: Start new observation\n");
+    println!("1: Start new observation");
+    println!("2: Add to an observation");
 
     let input = prompt_user("Enter your choice:");
 
