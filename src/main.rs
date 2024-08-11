@@ -1,4 +1,4 @@
-use chrono::prelude::*;
+use chrono::Local;
 use rusqlite::{params, Connection, Result};
 use std::io;
 use std::path::Path;
@@ -78,16 +78,40 @@ fn add_observation() -> Result<()> {
 
     println!("Next, fill out all the variables of the observation. If you included a date, that will get filled in automatically. ");
 
-    let pragma_query: &str = &format!("pragma table_info({})", result_vector[input]);
-    let mut stmt = conn.prepare(pragma_query)?;
+    let mut stmt = conn.prepare(&format!("pragma table_info({})", result_vector[input]))?;
     let columns = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
     })?;
 
+    let mut observation = Observation {
+        name: String::from(&format!("{}", result_vector[input])),
+        parameters: Vec::new(),
+    };
+
     for column in columns {
         let (name, data_type) = column?;
-        println!("Column: {}, Type: {}", name, data_type);
+        if data_type == "DATE" {
+            let date = Local::now().date_naive();
+            let date_string = format!("'{}'", date.format("%Y-%m-%d").to_string());
+            observation.parameters.push(vec![date_string]);
+            continue;
+        }
+        println!("Column Name: {}\nSpecified Type: {}", name, data_type);
+        observation
+            .parameters
+            .push(vec![prompt_user("Todays Observation:")]);
     }
+
+    let mut columns = String::new();
+    for param in &observation.parameters {
+        columns.push_str(&format!("{}, ", param[0]));
+    }
+    columns.pop();
+    columns.pop();
+
+    let sql = format!("INSERT INTO {} VALUES ({});", observation.name, columns);
+    println!("{}", sql);
+    conn.execute(&sql, [])?;
 
     Ok(())
 }
@@ -102,7 +126,7 @@ fn new_observation() {
     let mut parameters: Vec<Vec<String>> = Vec::new();
 
     if prompt_user("Want to add a date for each entry? [Y/n]") == "Y" {
-        parameters.push(vec![String::from("Date"), String::from("DATETIME")]);
+        parameters.push(vec![String::from("Date"), String::from("DATE")]);
         println!("Added a date element to the table");
     } else {
         println!("Input not [Y]es, skipping date...");
