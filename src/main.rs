@@ -1,9 +1,10 @@
 use chrono::prelude::*;
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
 use std::io;
 use std::path::Path;
 
 static DATATYPES: [&str; 2] = ["INTEGER", "FLOAT"];
+static PATH_STR: &str = "./observations/observations.db";
 
 struct Observation {
     name: String,
@@ -22,8 +23,7 @@ fn prompt_user(prompt: &str) -> String {
 fn create_table(observation: Observation) -> Result<Connection> {
     println!("Setting up observation.");
 
-    let path = Path::new("./observations/observations.db");
-    let conn = Connection::open(&path)?;
+    let conn = Connection::open(PATH_STR)?;
 
     let mut columns = String::new();
     for param in &observation.parameters {
@@ -40,6 +40,56 @@ fn create_table(observation: Observation) -> Result<Connection> {
     conn.execute(&sql, [])?;
 
     Ok(conn)
+}
+
+fn add_observation() -> Result<()> {
+    println!(
+        "Connecting to database...\nSelect one of the following observations to add your data to:"
+    );
+
+    let conn = Connection::open(PATH_STR)?;
+
+    let mut stmt = conn.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
+    )?;
+
+    let table_names_iter = stmt.query_map(params![], |row| {
+        let table_name: String = row.get(0)?;
+        Ok(table_name)
+    })?;
+
+    let mut result_vector: Vec<String> = Vec::new();
+
+    for (i, table_name_result) in table_names_iter.enumerate() {
+        let table_name = table_name_result?;
+        println!("{}: {}", i + 1, table_name);
+        result_vector.push(String::from(table_name));
+    }
+
+    let input = prompt_user("");
+
+    let input: usize = match input.trim().parse::<usize>() {
+        Ok(num) if num > 0 && num <= result_vector.len() => num - 1,
+        _ => {
+            println!("Invalid table number");
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+    };
+
+    println!("Next, fill out all the variables of the observation. If you included a date, that will get filled in automatically. ");
+
+    let pragma_query: &str = &format!("pragma table_info({})", result_vector[input]);
+    let mut stmt = conn.prepare(pragma_query)?;
+    let columns = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+    })?;
+
+    for column in columns {
+        let (name, data_type) = column?;
+        println!("Column: {}, Type: {}", name, data_type);
+    }
+
+    Ok(())
 }
 
 fn new_observation() {
@@ -115,8 +165,25 @@ fn main() {
     let input = prompt_user("Enter your choice:");
 
     match input.parse::<u8>() {
-        Ok(1) => new_observation(),
-        Ok(_) => println!("Invalid Option"),
-        Err(_) => println!("Please enter a valid number."),
+        Ok(num) => {
+            if num == 1 {
+                new_observation();
+            } else if num == 2 {
+                let result = add_observation();
+                match result {
+                    Ok(_) => {
+                        println!("Successfully added to observation, exiting...");
+                    }
+                    Err(e) => {
+                        println!("Failed to add to observation: {}", e);
+                    }
+                }
+            } else {
+                println!("Invalid number, exiting...");
+            }
+        }
+        Err(_) => {
+            println!("Please enter a valid number.");
+        }
     }
 }
