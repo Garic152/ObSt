@@ -8,7 +8,14 @@ use ratatui::{
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
-    widgets::{Block, Paragraph},
+    layout::Alignment,
+    style::Stylize,
+    symbols::border,
+    text::{Line, Text},
+    widgets::{
+        block::{Position, Title},
+        Block, Paragraph, Widget,
+    },
     Frame, Terminal,
 };
 
@@ -30,17 +37,6 @@ impl App {
             quit: false,
         }
     }
-}
-
-fn handle_events() -> io::Result<bool> {
-    if event::poll(std::time::Duration::from_millis(50))? {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
@@ -83,7 +79,7 @@ fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::default();
-    let res = run_app(&mut terminal, &mut app)?;
+    run_app(&mut terminal, &mut app)?;
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -91,8 +87,39 @@ fn main() -> io::Result<()> {
 }
 
 fn ui(frame: &mut Frame, app: &mut App) {
-    frame.render_widget(
-        Paragraph::new("Hello World!").block(Block::bordered().title("Greeting")),
-        frame.area(),
-    );
+    match app.state {
+        AppState::StartMenu => {
+            let title = Title::from(" ObSt Main Menu ".bold());
+
+            frame.render_widget(
+                Paragraph::new("\nWelcome to the ObSt Observation tracking tool!\n")
+                    .centered()
+                    .block(Block::bordered().title(title.alignment(Alignment::Center)))
+                    .alignment(Alignment::Center),
+                frame.area(),
+            );
+        }
+        AppState::NewObservation => {
+            let title = Title::from(" New Observation ".bold());
+
+            frame.render_widget(
+                Paragraph::new("\nTest")
+                    .centered()
+                    .block(Block::bordered().title(title.alignment(Alignment::Center)))
+                    .alignment(Alignment::Center),
+                frame.area(),
+            );
+        }
+        AppState::AddObservation => {
+            let title = Title::from(" Add Observation ".bold());
+
+            frame.render_widget(
+                Paragraph::new("\nTest")
+                    .centered()
+                    .block(Block::bordered().title(title.alignment(Alignment::Center)))
+                    .alignment(Alignment::Center),
+                frame.area(),
+            );
+        }
+    }
 }
