@@ -61,7 +61,7 @@ impl App {
                 name: ("".to_string()),
                 parameters: (Vec::new()),
             },
-            input: String::new(),
+            input: "_".to_string(),
             character_index: 0,
             data: Vec::new(),
             quit: false,
@@ -73,10 +73,20 @@ impl App {
             _ => {}
         }
     }
+    pub fn new_observation_add_name(&mut self) {
+        self.input.pop();
+        if self.input.is_empty() {
+            self.reset();
+        }
+        self.observation.name = self.input.clone();
+    }
     pub fn new_observation_add_date(&mut self) {
         self.observation
             .parameters
             .push(vec![String::from("Date"), String::from("DATE")]);
+    }
+    pub fn reset(&mut self) {
+        *self = App::default();
     }
 }
 
@@ -104,6 +114,22 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     KeyCode::Char('q') => app.state = AppState::StartMenu,
 
                     _ => match app.new_observation_step {
+                        NewObservationSteps::Name => match key.code {
+                            KeyCode::Enter => {
+                                app.new_observation_add_name();
+                            }
+                            KeyCode::Backspace => {
+                                app.input.pop();
+                                app.input.pop();
+                                app.input.push('_');
+                            }
+                            KeyCode::Char(to_insert) => {
+                                app.input.pop();
+                                app.input.push(to_insert);
+                                app.input.push('_');
+                            }
+                            _ => {}
+                        },
                         NewObservationSteps::Date => match key.code {
                             KeyCode::Char('y') => app.new_observation_add_date(),
                             KeyCode::Char('n') => {
@@ -162,16 +188,16 @@ fn ui(frame: &mut Frame, app: &mut App) {
 
             let outer_block = Block::bordered().title(title);
             let message = match app.new_observation_step {
-                NewObservationSteps::Name => Paragraph::new("\nYou will now be able to add a new observation to the database.\nStarting off, give your observation a name.").centered(),
-                NewObservationSteps::Date => Paragraph::new("\nDo you intend to track the date for your observation?").centered(),
-                NewObservationSteps::Amount => Paragraph::new("\nHow many correlated variables do you want to observe?").centered(),
-                NewObservationSteps::Declaration => Paragraph::new("\nPlease now declare the variables you want to observe.\nIn order to do that, fill in the highlighted box and press enter to confirm.").centered(),
+                NewObservationSteps::Name => Paragraph::new("\nYou will now be able to add a new observation to the database.\nStarting off, give your observation a name."),
+                NewObservationSteps::Date => Paragraph::new("\nDo you intend to track the date for your observation?"),
+                NewObservationSteps::Amount => Paragraph::new("\nHow many correlated variables do you want to observe?"),
+                NewObservationSteps::Declaration => Paragraph::new("\nPlease now declare the variables you want to observe.\nIn order to do that, fill in the highlighted box and press enter to confirm."),
                 NewObservationSteps::Confirmation => Paragraph::new("\nTODO!")
             };
 
             let inner_block = Block::bordered()
                 .title("Input")
-                .title_alignment(Alignment::Center);
+                .title_alignment(Alignment::Left);
             let input = match app.new_observation_step {
                 NewObservationSteps::Name => {
                     Paragraph::new(app.input.as_str()).style(Style::default())
@@ -183,15 +209,15 @@ fn ui(frame: &mut Frame, app: &mut App) {
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .margin(1)
-                .constraints([Constraint::Length(5), Constraint::Length(3)].as_ref())
+                .margin(0)
+                .constraints([Constraint::Length(4), Constraint::Length(3)].as_ref())
                 .split(inner_area);
 
             frame.render_widget(
                 message
                     .centered()
                     .block(Block::default())
-                    .alignment(Alignment::Center),
+                    .alignment(Alignment::Left),
                 chunks[0],
             );
             frame.render_widget(input.block(inner_block), chunks[1]);
