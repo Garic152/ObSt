@@ -43,12 +43,14 @@ pub struct App {
     selected_menu: i8,
     new_observation_step: NewObservationSteps,
     observation: Observation,
-    amount: i8,
+    items: i8,
+    current_item: i8,
     input: String,
     input_type: InputType,
     input_vector: Vec<String>,
     character_index: usize,
     data: Vec<String>,
+    sql_statement: String,
     quit: bool,
 }
 
@@ -64,15 +66,17 @@ impl App {
             selected_menu: 0,
             new_observation_step: NewObservationSteps::Name,
             observation: Observation {
-                name: ("".to_string()),
+                name: (String::new()),
                 parameters: (Vec::new()),
             },
-            amount: 0,
+            items: 0,
+            current_item: 1,
             input: "_".to_string(),
             input_type: InputType::Name,
             input_vector: Vec::new(),
             character_index: 0,
             data: Vec::new(),
+            sql_statement: String::new(),
             quit: false,
         }
     }
@@ -89,7 +93,7 @@ impl App {
         }
         self.observation.name = self.input.clone();
         self.new_observation_step = NewObservationSteps::Date;
-        self.reset_string();
+        self.reset_input();
     }
     pub fn new_observation_add_date(&mut self) {
         self.observation
@@ -99,7 +103,7 @@ impl App {
     }
     pub fn new_observation_add_amount(&mut self) {
         self.input.pop();
-        self.amount = match self.input.trim().parse::<i8>() {
+        self.items = match self.input.trim().parse::<i8>() {
             Ok(num) => num,
             _ => {
                 self.reset();
@@ -107,22 +111,44 @@ impl App {
             }
         };
         self.new_observation_step = NewObservationSteps::Declaration;
-        self.reset_string();
+        self.reset_input();
     }
-    pub fn append_input_vector(&mut self) {
-        self.input.pop();
-        self.input_vector.push(self.input.clone());
-        match self.input_type {
-            InputType::Type => self.reset_string(),
-            _ => {}
+    pub fn append_input_vector(&mut self, datatype: Option<&str>) {
+        match datatype {
+            Some(n) => {
+                self.input_vector.push(n.to_string());
+                self.current_item += 1;
+                self.observation.parameters.push(self.input_vector.clone());
+                self.input_vector = Vec::new();
+                self.input_type = InputType::Name;
+                if self.current_item > self.items {
+                    self.current_item = 1;
+                    self.prepare_sql();
+                    self.new_observation_step = NewObservationSteps::Confirmation;
+                }
+            }
+            _ => {
+                self.input.pop();
+                self.input_vector.push(self.input.clone());
+                self.reset_input();
+                self.input_type = InputType::Type;
+            }
         }
-        self.amount -= 1;
-        if self.amount <= 0 {
-            self.new_observation_step = NewObservationSteps::Confirmation;
-        }
-        self.reset_string();
     }
-    pub fn reset_string(&mut self) {
+    pub fn prepare_sql(&mut self) {
+        let mut columns = String::new();
+        for param in &self.observation.parameters {
+            columns.push_str(&format!("{} {}, ", param[0], param[1]));
+        }
+        columns.pop();
+        columns.pop();
+
+        self.sql_statement = format!(
+            "CREATE TABLE IF NOT EXISTS {} ({});",
+            self.observation.name, columns
+        );
+    }
+    pub fn reset_input(&mut self) {
         self.input = "_".to_string();
     }
     pub fn reset(&mut self) {
@@ -193,23 +219,27 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                             }
                             _ => {}
                         },
-                        NewObservationSteps::Declaration => match key.code {
-                            KeyCode::Char(' ') => {}
-                            KeyCode::Enter => match app.input_type {
-                                InputType::Name => app.append_input_vector(),
-                                InputType::Type => app.append_input_vector(),
+                        NewObservationSteps::Declaration => match app.input_type {
+                            InputType::Name => match key.code {
+                                KeyCode::Char(' ') => {}
+                                KeyCode::Enter => app.append_input_vector(None),
+                                KeyCode::Backspace => {
+                                    app.input.pop();
+                                    app.input.pop();
+                                    app.input.push('_');
+                                }
+                                KeyCode::Char(to_insert) => {
+                                    app.input.pop();
+                                    app.input.push(to_insert);
+                                    app.input.push('_');
+                                }
+                                _ => {}
                             },
-                            KeyCode::Backspace => {
-                                app.input.pop();
-                                app.input.pop();
-                                app.input.push('_');
-                            }
-                            KeyCode::Char(to_insert) => {
-                                app.input.pop();
-                                app.input.push(to_insert);
-                                app.input.push('_');
-                            }
-                            _ => {}
+                            InputType::Type => match key.code {
+                                KeyCode::Char('1') => app.append_input_vector(Some("INTEGER")),
+                                KeyCode::Char('2') => app.append_input_vector(Some("FLOAT")),
+                                _ => {}
+                            },
                         },
                         _ => {}
                     },
@@ -265,8 +295,11 @@ fn ui(frame: &mut Frame, app: &mut App) {
                 NewObservationSteps::Name => Paragraph::new("\nYou will now be able to add a new observation to the database.\nStarting off, give your observation a name."),
                 NewObservationSteps::Date => Paragraph::new("\nDo you intend to track the date for your observation? (Y/n)"),
                 NewObservationSteps::Amount => Paragraph::new("\nHow many correlated variables do you want to observe?"),
-                NewObservationSteps::Declaration => Paragraph::new("\nPlease now declare the variables you want to observe.\nIn order to do that, fill in the highlighted box and press enter to confirm."),
-                NewObservationSteps::Confirmation => Paragraph::new("\nTODO!")
+                NewObservationSteps::Declaration => match app.input_type {
+                    InputType::Name => Paragraph::new(format!("\nPlease name variable {}", app.current_item)),
+                    InputType::Type => Paragraph::new("\nPlease declare the type of the variable by typing in the corresponding number.\n1) Integer 2) Float"),
+                }
+                NewObservationSteps::Confirmation => Paragraph::new(format!("\n {}", app.sql_statement)),
             };
 
             let inner_area = outer_block.inner(frame.area());
@@ -285,15 +318,21 @@ fn ui(frame: &mut Frame, app: &mut App) {
                 chunks[0],
             );
 
-            match app.new_observation_step {
-                NewObservationSteps::Date => {}
-                _ => {
-                    let inner_block = Block::bordered()
-                        .title("Input")
-                        .title_alignment(Alignment::Left);
-                    let input = Paragraph::new(app.input.as_str()).style(Style::default());
-                    frame.render_widget(input.block(inner_block), chunks[1]);
-                }
+            let render_input: bool = match app.new_observation_step {
+                NewObservationSteps::Date => false,
+                NewObservationSteps::Declaration => match app.input_type {
+                    InputType::Type => false,
+                    _ => true,
+                },
+                _ => true,
+            };
+
+            if render_input {
+                let inner_block = Block::bordered()
+                    .title("Input")
+                    .title_alignment(Alignment::Left);
+                let input = Paragraph::new(app.input.as_str()).style(Style::default());
+                frame.render_widget(input.block(inner_block), chunks[1]);
             }
 
             frame.render_widget(outer_block, frame.area());
