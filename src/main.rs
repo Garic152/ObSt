@@ -1,3 +1,4 @@
+use rusqlite::{params, Connection, Result};
 use std::{self, io, str};
 
 use ratatui::{
@@ -18,6 +19,8 @@ use ratatui::{
     },
     Frame, Terminal,
 };
+
+static PATH_STR: &str = "./observations/observations.db";
 
 enum InputType {
     Name,
@@ -148,6 +151,11 @@ impl App {
             self.observation.name, columns
         );
     }
+    pub fn send_sql(&mut self) -> Result<Connection> {
+        let conn = Connection::open(PATH_STR)?;
+        conn.execute(&self.sql_statement, [])?;
+        Ok(conn)
+    }
     pub fn reset_input(&mut self) {
         self.input = "_".to_string();
     }
@@ -241,7 +249,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                                 _ => {}
                             },
                         },
-                        _ => {}
+                        NewObservationSteps::Confirmation => match key.code {
+                            KeyCode::Enter => match app.send_sql() {
+                                Ok(_) => app.reset(),
+                                Err(_) => panic!(),
+                            },
+                            _ => {}
+                        },
                     },
                 },
                 AppState::AddObservation => match key.code {
@@ -299,7 +313,7 @@ fn ui(frame: &mut Frame, app: &mut App) {
                     InputType::Name => Paragraph::new(format!("\nPlease name variable {}", app.current_item)),
                     InputType::Type => Paragraph::new("\nPlease declare the type of the variable by typing in the corresponding number.\n1) Integer 2) Float"),
                 }
-                NewObservationSteps::Confirmation => Paragraph::new(format!("\n {}", app.sql_statement)),
+                NewObservationSteps::Confirmation => Paragraph::new(format!("Please confirm this SQL statement to see if you have made any mistakes. \n {}\nIf you are satisfied, press enter to update the database.", app.sql_statement)),
             };
 
             let inner_area = outer_block.inner(frame.area());
@@ -320,6 +334,7 @@ fn ui(frame: &mut Frame, app: &mut App) {
 
             let render_input: bool = match app.new_observation_step {
                 NewObservationSteps::Date => false,
+                NewObservationSteps::Confirmation => false,
                 NewObservationSteps::Declaration => match app.input_type {
                     InputType::Type => false,
                     _ => true,
